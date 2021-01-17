@@ -63,21 +63,21 @@ func NewWithHistogramDistribution(options ...histogram.Option) export.Aggregator
 	return selectorHistogram{options: options}
 }
 
-func sumAggs(aggPtrs []*export.Aggregator) {
+func sumAggs(aggPtrs []*metric.Aggregator) {
 	aggs := sum.New(len(aggPtrs))
 	for i := range aggPtrs {
 		*aggPtrs[i] = &aggs[i]
 	}
 }
 
-func lastValueAggs(aggPtrs []*export.Aggregator) {
+func lastValueAggs(aggPtrs []*metric.Aggregator) {
 	aggs := lastvalue.New(len(aggPtrs))
 	for i := range aggPtrs {
 		*aggPtrs[i] = &aggs[i]
 	}
 }
 
-func (selectorInexpensive) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*export.Aggregator) {
+func (selectorInexpensive) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*metric.Aggregator) {
 	switch descriptor.InstrumentKind() {
 	case metric.ValueObserverInstrumentKind:
 		lastValueAggs(aggPtrs)
@@ -91,7 +91,7 @@ func (selectorInexpensive) AggregatorFor(descriptor *metric.Descriptor, aggPtrs 
 	}
 }
 
-func (selectorExact) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*export.Aggregator) {
+func (selectorExact) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*metric.Aggregator) {
 	switch descriptor.InstrumentKind() {
 	case metric.ValueObserverInstrumentKind:
 		lastValueAggs(aggPtrs)
@@ -105,7 +105,7 @@ func (selectorExact) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*ex
 	}
 }
 
-func (s selectorHistogram) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*export.Aggregator) {
+func (s selectorHistogram) AggregatorFor(descriptor *metric.Descriptor, aggPtrs ...*metric.Aggregator) {
 	switch descriptor.InstrumentKind() {
 	case metric.ValueObserverInstrumentKind:
 		lastValueAggs(aggPtrs)

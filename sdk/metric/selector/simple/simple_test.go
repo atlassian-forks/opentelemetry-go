@@ -39,8 +39,8 @@ var (
 	testValueObserverDesc     = metric.NewDescriptor("valueobserver", metric.ValueObserverInstrumentKind, number.Int64Kind)
 )
 
-func oneAgg(sel export.AggregatorSelector, desc *metric.Descriptor) export.Aggregator {
-	var agg export.Aggregator
+func oneAgg(sel export.AggregatorSelector, desc *metric.Descriptor) metric.Aggregator {
+	var agg metric.Aggregator
 	sel.AggregatorFor(desc, &agg)
 	return agg
 }

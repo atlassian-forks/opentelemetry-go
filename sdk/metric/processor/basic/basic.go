@@ -22,8 +22,8 @@ import (
 
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/aggregation"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
-	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
@@ -79,17 +79,17 @@ type (
 		// (if !currentOwned) or it refers to an Aggregator
 		// owned by the processor used to accumulate multiple
 		// values in a single collection round.
-		current export.Aggregator
+		current metric.Aggregator
 
 		// delta, if non-nil, refers to an Aggregator owned by
 		// the processor used to compute deltas between
 		// precomputed sums.
-		delta export.Aggregator
+		delta metric.Aggregator
 
 		// cumulative, if non-nil, refers to an Aggregator owned
 		// by the processor used to store the last cumulative
 		// value.
-		cumulative export.Aggregator
+		cumulative metric.Aggregator
 	}
 
 	state struct {

@@ -23,9 +23,9 @@ import (
 
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/aggregation"
 	"go.opentelemetry.io/otel/metric/number"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
-	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator/exact"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator/histogram"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator/lastvalue"
@@ -49,7 +49,7 @@ type (
 	mapValue struct {
 		labels     *label.Set
 		resource   *resource.Resource
-		aggregator export.Aggregator
+		aggregator metric.Aggregator
 	}
 
 	// Output implements export.CheckpointSet.
@@ -161,7 +161,7 @@ func AggregatorSelector() export.AggregatorSelector {
 }
 
 // AggregatorFor implements export.AggregatorSelector.
-func (testAggregatorSelector) AggregatorFor(desc *metric.Descriptor, aggPtrs ...*export.Aggregator) {
+func (testAggregatorSelector) AggregatorFor(desc *metric.Descriptor, aggPtrs ...*metric.Aggregator) {
 
 	switch {
 	case strings.HasSuffix(desc.Name(), ".disabled"):
@@ -237,7 +237,7 @@ func (o *Output) AddRecord(rec export.Record) error {
 		resource: rec.Resource().Equivalent(),
 	}
 	if _, ok := o.m[key]; !ok {
-		var agg export.Aggregator
+		var agg metric.Aggregator
 		testAggregatorSelector{}.AggregatorFor(rec.Descriptor(), &agg)
 		o.m[key] = mapValue{
 			aggregator: agg,
@@ -245,7 +245,7 @@ func (o *Output) AddRecord(rec export.Record) error {
 			resource:   rec.Resource(),
 		}
 	}
-	return o.m[key].aggregator.Merge(rec.Aggregation().(export.Aggregator), rec.Descriptor())
+	return o.m[key].aggregator.Merge(rec.Aggregation().(metric.Aggregator), rec.Descriptor())
 }
 
 // Map returns the calculated values for test validation from a set of
