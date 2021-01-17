@@ -144,6 +144,17 @@ func New(aselector export.AggregatorSelector, eselector export.ExportKindSelecto
 	return p
 }
 
+// newAggregator returns a new instance of Aggregator. The result comes from
+// the factory if it's not nil.
+func (b *Processor) newAggregator(descriptor *metric.Descriptor, factory metric.AggregatorFactory) metric.Aggregator {
+	if factory != nil {
+		return factory.NewInstance()
+	}
+	var result metric.Aggregator
+	b.AggregatorFor(descriptor, &result)
+	return result
+}
+
 // Process implements export.Processor.
 func (b *Processor) Process(accum export.Accumulation) error {
 	if b.startedCollection != b.finishedCollection+1 {
@@ -170,13 +181,9 @@ func (b *Processor) Process(accum export.Accumulation) error {
 			current:  agg,
 		}
 		if stateful {
+			newValue.cumulative = b.newAggregator(desc, accum.AggregatorFactory())
 			if desc.InstrumentKind().PrecomputedSum() {
-				// If we know we need to compute deltas, allocate two aggregators.
-				b.AggregatorFor(desc, &newValue.cumulative, &newValue.delta)
-			} else {
-				// In this case we are certain not to need a delta, only allocate
-				// a cumulative aggregator.
-				b.AggregatorFor(desc, &newValue.cumulative)
+				newValue.delta = b.newAggregator(desc, accum.AggregatorFactory())
 			}
 		}
 		b.state.values[key] = newValue
@@ -233,7 +240,7 @@ func (b *Processor) Process(accum export.Accumulation) error {
 	// before merging below.
 	if !value.currentOwned {
 		tmp := value.current
-		b.AggregatorSelector.AggregatorFor(desc, &value.current)
+		value.current = b.newAggregator(desc, accum.AggregatorFactory())
 		value.currentOwned = true
 		if err := tmp.SynchronizedMove(value.current, desc); err != nil {
 			return err

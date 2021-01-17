@@ -37,6 +37,17 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
+type testAggregatorFactory struct {
+	descriptor *metric.Descriptor
+	selector   export.AggregatorSelector
+}
+
+func (t *testAggregatorFactory) NewInstance() metric.Aggregator {
+	var result metric.Aggregator
+	t.selector.AggregatorFor(t.descriptor, &result)
+	return result
+}
+
 // TestProcessor tests all the non-error paths in this package.
 func TestProcessor(t *testing.T) {
 	type exportCase struct {
@@ -103,13 +114,21 @@ func asNumber(nkind number.Kind, value int64) number.Number {
 	return number.NewFloat64Number(float64(value))
 }
 
-func updateFor(t *testing.T, desc *metric.Descriptor, selector export.AggregatorSelector, res *resource.Resource, value int64, labs ...label.KeyValue) export.Accumulation {
+func updateFor(t *testing.T, desc *metric.Descriptor, selector export.AggregatorSelector, provideAggrFactory bool, res *resource.Resource, value int64, labs ...label.KeyValue) export.Accumulation {
 	ls := label.NewSet(labs...)
 	var agg metric.Aggregator
 	selector.AggregatorFor(desc, &agg)
 	require.NoError(t, agg.Update(context.Background(), asNumber(desc.NumberKind(), value), desc))
 
-	return export.NewAccumulation(desc, &ls, res, agg)
+	var factory metric.AggregatorFactory
+	if provideAggrFactory {
+		factory = &testAggregatorFactory{
+			descriptor: desc,
+			selector:   selector,
+		}
+	}
+
+	return export.NewAccumulation(desc, &ls, res, agg, factory)
 }
 
 func testProcessor(
@@ -127,8 +146,13 @@ func testProcessor(
 	labs1 := []label.KeyValue{label.String("L1", "V")}
 	labs2 := []label.KeyValue{label.String("L2", "V")}
 
-	testBody := func(t *testing.T, hasMemory bool, nAccum, nCheckpoint int) {
-		processor := basic.New(selector, export.ConstantExportKindSelector(ekind), basic.WithMemory(hasMemory))
+	testBody := func(t *testing.T, provideAggrFactory, hasMemory bool, nAccum, nCheckpoint int) {
+		var testSelector export.AggregatorSelector
+		if !provideAggrFactory {
+			testSelector = selector
+		}
+
+		processor := basic.New(testSelector, export.ConstantExportKindSelector(ekind), basic.WithMemory(hasMemory))
 
 		instSuffix := fmt.Sprint(".", strings.ToLower(akind.String()))
 
@@ -149,8 +173,8 @@ func testProcessor(
 			processor.StartCollection()
 
 			for na := 0; na < nAccum; na++ {
-				_ = processor.Process(updateFor(t, &desc1, selector, res, input, labs1...))
-				_ = processor.Process(updateFor(t, &desc2, selector, res, input, labs2...))
+				_ = processor.Process(updateFor(t, &desc1, selector, provideAggrFactory, res, input, labs1...))
+				_ = processor.Process(updateFor(t, &desc2, selector, provideAggrFactory, res, input, labs2...))
 			}
 
 			err := processor.FinishCollection()
@@ -240,20 +264,22 @@ func testProcessor(
 		}
 	}
 
-	for _, hasMem := range []bool{false, true} {
-		t.Run(fmt.Sprintf("HasMemory=%v", hasMem), func(t *testing.T) {
-			// For 1 to 3 checkpoints:
-			for nAccum := 1; nAccum <= 3; nAccum++ {
-				t.Run(fmt.Sprintf("NumAccum=%d", nAccum), func(t *testing.T) {
-					// For 1 to 3 accumulators:
-					for nCheckpoint := 1; nCheckpoint <= 3; nCheckpoint++ {
-						t.Run(fmt.Sprintf("NumCkpt=%d", nCheckpoint), func(t *testing.T) {
-							testBody(t, hasMem, nAccum, nCheckpoint)
-						})
-					}
-				})
-			}
-		})
+	for _, provideAggrFactory := range []bool{false, true} {
+		for _, hasMem := range []bool{false, true} {
+			t.Run(fmt.Sprintf("HasMemory=%v", hasMem), func(t *testing.T) {
+				// For 1 to 3 checkpoints:
+				for nAccum := 1; nAccum <= 3; nAccum++ {
+					t.Run(fmt.Sprintf("NumAccum=%d", nAccum), func(t *testing.T) {
+						// For 1 to 3 accumulators:
+						for nCheckpoint := 1; nCheckpoint <= 3; nCheckpoint++ {
+							t.Run(fmt.Sprintf("NumCkpt=%d", nCheckpoint), func(t *testing.T) {
+								testBody(t, provideAggrFactory, hasMem, nAccum, nCheckpoint)
+							})
+						}
+					})
+				}
+			})
+		}
 	}
 }
 
@@ -297,7 +323,7 @@ func TestBasicInconsistent(t *testing.T) {
 	b = basic.New(processorTest.AggregatorSelector(), export.StatelessExportKindSelector())
 
 	desc := metric.NewDescriptor("inst", metric.CounterInstrumentKind, number.Int64Kind)
-	accum := export.NewAccumulation(&desc, label.EmptySet(), resource.Empty(), metrictest.NoopAggregator{})
+	accum := export.NewAccumulation(&desc, label.EmptySet(), resource.Empty(), metrictest.NoopAggregator{}, nil)
 	require.Equal(t, basic.ErrInconsistentState, b.Process(accum))
 
 	// Test invalid kind:
@@ -320,7 +346,7 @@ func TestBasicTimestamps(t *testing.T) {
 	afterNew := time.Now()
 
 	desc := metric.NewDescriptor("inst", metric.CounterInstrumentKind, number.Int64Kind)
-	accum := export.NewAccumulation(&desc, label.EmptySet(), resource.Empty(), metrictest.NoopAggregator{})
+	accum := export.NewAccumulation(&desc, label.EmptySet(), resource.Empty(), metrictest.NoopAggregator{}, nil)
 
 	b.StartCollection()
 	_ = b.Process(accum)
@@ -383,7 +409,7 @@ func TestStatefulNoMemoryCumulative(t *testing.T) {
 
 		// Add 10
 		processor.StartCollection()
-		_ = processor.Process(updateFor(t, &desc, selector, res, 10, label.String("A", "B")))
+		_ = processor.Process(updateFor(t, &desc, selector, false, res, 10, label.String("A", "B")))
 		require.NoError(t, processor.FinishCollection())
 
 		// Verify one element
@@ -417,7 +443,7 @@ func TestStatefulNoMemoryDelta(t *testing.T) {
 
 		// Add 10
 		processor.StartCollection()
-		_ = processor.Process(updateFor(t, &desc, selector, res, int64(i*10), label.String("A", "B")))
+		_ = processor.Process(updateFor(t, &desc, selector, false, res, int64(i*10), label.String("A", "B")))
 		require.NoError(t, processor.FinishCollection())
 
 		// Verify one element
@@ -445,9 +471,9 @@ func TestMultiObserverSum(t *testing.T) {
 		for i := 1; i < 3; i++ {
 			// Add i*10*3 times
 			processor.StartCollection()
-			_ = processor.Process(updateFor(t, &desc, selector, res, int64(i*10), label.String("A", "B")))
-			_ = processor.Process(updateFor(t, &desc, selector, res, int64(i*10), label.String("A", "B")))
-			_ = processor.Process(updateFor(t, &desc, selector, res, int64(i*10), label.String("A", "B")))
+			_ = processor.Process(updateFor(t, &desc, selector, false, res, int64(i*10), label.String("A", "B")))
+			_ = processor.Process(updateFor(t, &desc, selector, false, res, int64(i*10), label.String("A", "B")))
+			_ = processor.Process(updateFor(t, &desc, selector, false, res, int64(i*10), label.String("A", "B")))
 			require.NoError(t, processor.FinishCollection())
 
 			// Multiplier is 1 for deltas, otherwise i.
