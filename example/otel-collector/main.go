@@ -122,6 +122,11 @@ func main() {
 	meter.RegisterView(metric.NewView(vr.SyncImpl(), metric.LabelKeys, []label.Key{"os_type"}, nil))
 	meter.RegisterView(metric.NewView(vr.SyncImpl(), metric.LabelKeys, []label.Key{"environment"}, nil))
 
+	// User defined histograms view, histograms will be aggregated with users defined buckets.
+	customBuckets := []float64{1.0, 2.0, 3.0, 4.0}
+	histAggregatorFactory := NewHistogramAggregatorFactory(customBuckets)
+	meter.RegisterView(metric.NewView(vr.SyncImpl(), metric.Ungroup, nil, histAggregatorFactory))
+
 	// labels represent additional key-value descriptors that can be bound to a
 	// metric observer or recorder.
 	commonLabels := []label.KeyValue{
